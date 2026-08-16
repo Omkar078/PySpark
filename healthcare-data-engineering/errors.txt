@@ -1,0 +1,12 @@
+1. Hadoop/Windows error: The first error happened when Spark successfully created the 5,000-row DataFrame but failed while writing it to Parquet.
+ The error said HADOOP_HOME and hadoop.home.dir are unset, meaning Spark's Hadoop layer could not find the Windows Hadoop utility winutils.exe. 
+We checked the Hadoop version bundled with PySpark and found Hadoop 3.5.0, then created C:\hadoop\bin, placed winutils.exe and hadoop.dll there, 
+and finally configured HADOOP_HOME and the Hadoop bin directory in the Python script using os.environ. After that, Spark could access the required 
+Windows Hadoop utilities and successfully wrote the Parquet files.
+
+2. Git/GitHub push error: The second issue was related to Git repository structure and history. Initially, healthcare-data-engineering was accidentally
+ initialized as a separate Git repository inside the existing PySpark repository, and we also tried pushing it to a GitHub repository that didn't exist.
+  We removed the nested .git folder so healthcare-data-engineering became a normal project folder inside the existing PySpark repository, added the
+   project files while excluding venv and generated Parquet data through .gitignore, and committed the changes. The push was then rejected because
+    the existing GitHub PySpark repository had commits that our local copy didn't have, so we pulled the remote history using git pull origin main --rebase, 
+    which integrated the histories. After that, git push origin main succeeded and the healthcare project was uploaded to GitHub.
