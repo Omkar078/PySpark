@@ -1,12 +1,17 @@
 import os
 
+# Configure Hadoop environment for Windows.
 os.environ["HADOOP_HOME"] = r"C:\hadoop"
 os.environ["hadoop_home_dir"] = r"C:\hadoop"
 os.environ["PATH"] += os.pathsep + r"C:\hadoop\bin"
 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import expr, lit, date_add
+from pyspark.sql.functions import expr, col, date_add
 
+
+# ---------------------------------------------------------
+# Create Spark Session
+# ---------------------------------------------------------
 
 spark = (
     SparkSession.builder
@@ -18,28 +23,81 @@ spark = (
 spark.sparkContext.setLogLevel("WARN")
 
 
+# ---------------------------------------------------------
+# Read existing Encounters
+# ---------------------------------------------------------
+
+encounters_path = "data/raw/encounters"
+
+encounters_df = (
+    spark.read
+    .parquet(encounters_path)
+    .select(
+        "encounter_id",
+        "patient_id",
+        "encounter_date"
+    )
+)
+
+
+# ---------------------------------------------------------
 # Generate 15 million diagnoses
+# ---------------------------------------------------------
+
 df = (
     spark.range(1, 15_000_001)
     .withColumnRenamed("id", "diagnosis_id")
 )
 
 
-# Assign encounter
+# ---------------------------------------------------------
+# Assign an existing encounter
+# ---------------------------------------------------------
+
 df = df.withColumn(
-    "encounter_id",
-    expr("cast(floor(rand(10) * 10000000) + 1 as bigint)")
+    "encounter_index",
+    expr(
+        "cast(floor(rand(10) * 10000000) + 1 as bigint)"
+    )
 )
 
 
-# Assign patient
+# Use the encounter index to obtain a valid encounter_id.
+encounters_indexed = (
+    encounters_df
+    .withColumn(
+        "encounter_index",
+        expr(
+            "row_number() over (order by encounter_id)"
+        )
+    )
+)
+
+
+# Join diagnosis records with encounters.
+df = (
+    df.join(
+        encounters_indexed,
+        on="encounter_index",
+        how="left"
+    )
+)
+
+
+# ---------------------------------------------------------
+# Assign patient from the associated encounter
+# ---------------------------------------------------------
+
 df = df.withColumn(
     "patient_id",
-    expr("cast(floor(rand(20) * 5000000) + 1 as bigint)")
+    col("patient_id")
 )
 
 
+# ---------------------------------------------------------
 # Diagnosis code
+# ---------------------------------------------------------
+
 df = df.withColumn(
     "diagnosis_code",
     expr("""
@@ -67,7 +125,10 @@ df = df.withColumn(
 )
 
 
+# ---------------------------------------------------------
 # Diagnosis description
+# ---------------------------------------------------------
+
 df = df.withColumn(
     "diagnosis_description",
     expr("""
@@ -92,17 +153,25 @@ df = df.withColumn(
 )
 
 
+# ---------------------------------------------------------
 # Diagnosis date
+# ---------------------------------------------------------
+
+# Generate diagnosis date on the encounter date
+# or up to 30 days after the encounter.
 df = df.withColumn(
     "diagnosis_date",
     date_add(
-        lit("2020-01-01"),
-        expr("cast(floor(rand(40) * 2400) as int)")
+        col("encounter_date"),
+        expr("cast(floor(rand(40) * 31) as int)")
     )
 )
 
 
+# ---------------------------------------------------------
 # Select final columns
+# ---------------------------------------------------------
+
 df = df.select(
     "diagnosis_id",
     "encounter_id",
@@ -113,21 +182,33 @@ df = df.select(
 )
 
 
+# ---------------------------------------------------------
 # Display sample
+# ---------------------------------------------------------
+
 print("Diagnoses Sample:")
 df.show(10, truncate=False)
 
 
+# ---------------------------------------------------------
 # Display schema
+# ---------------------------------------------------------
+
 print("Diagnoses Schema:")
 df.printSchema()
 
 
+# ---------------------------------------------------------
 # Count records
+# ---------------------------------------------------------
+
 print("Total Diagnoses:", df.count())
 
 
+# ---------------------------------------------------------
 # Write to Parquet
+# ---------------------------------------------------------
+
 output_path = "data/raw/diagnoses"
 
 (
@@ -139,5 +220,9 @@ output_path = "data/raw/diagnoses"
 
 print(f"Diagnoses data written to: {output_path}")
 
+
+# ---------------------------------------------------------
+# Stop Spark
+# ---------------------------------------------------------
 
 spark.stop()
